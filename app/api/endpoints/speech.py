@@ -35,7 +35,7 @@ EXPRESSIVE_LLM_URL = os.environ.get("EXPRESSIVE_LLM_URL", "http://localhost:8008
 EXPRESSIVE_SYSTEM_PROMPT = (
     "You are an expressive speech director. Insert paralinguistic tags into text "
     "where a natural human speaker would express them. "
-    "Available tags: [laugh], [chuckle], [sigh], [gasp], [pause], [whisper], [cough]. "
+    "Available tags: [laugh], [chuckle], [sigh], [gasp], [cough]. Do NOT use [pause] or [whisper] — they get read aloud. "
     "Rules: Do NOT change, rephrase, add, or remove any words. Only insert tags. "
     "1-3 tags per paragraph max. Match emotional tone. "
     "Return ONLY the annotated text, nothing else."
