@@ -25,6 +25,55 @@ from app.core import (
 from app.core.tts_model import get_model, is_multilingual
 from app.core.text_processing import split_text_for_streaming, get_streaming_settings
 
+import re
+import httpx
+
+# --- Cortex: Expressive mode ---
+# When expressive=True, call a local LLM to insert paralinguistic tags
+# before TTS rendering. The LLM URL is configurable via env var.
+EXPRESSIVE_LLM_URL = os.environ.get("EXPRESSIVE_LLM_URL", "http://localhost:8008/v1/chat/completions")
+EXPRESSIVE_SYSTEM_PROMPT = (
+    "You are an expressive speech director. Insert paralinguistic tags into text "
+    "where a natural human speaker would express them. "
+    "Available tags: [laugh], [chuckle], [sigh], [gasp], [pause], [whisper], [cough]. "
+    "Rules: Do NOT change, rephrase, add, or remove any words. Only insert tags. "
+    "1-3 tags per paragraph max. Match emotional tone. "
+    "Return ONLY the annotated text, nothing else."
+)
+
+
+async def annotate_expressive(text: str) -> str:
+    """Call localhost LLM to insert paralinguistic tags. Falls back to original text."""
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=3.0)) as client:
+            resp = await client.post(
+                EXPRESSIVE_LLM_URL,
+                json={
+                    "model": "ignored",
+                    "messages": [
+                        {"role": "system", "content": EXPRESSIVE_SYSTEM_PROMPT},
+                        {"role": "user", "content": text},
+                    ],
+                    "max_tokens": len(text) + 500,
+                    "temperature": 0.3,
+                },
+            )
+        if resp.status_code != 200:
+            print(f"Expressive LLM error: {resp.status_code}")
+            return text
+        result = resp.json()
+        annotated = result["choices"][0]["message"]["content"].strip()
+        annotated = re.sub(r"<think>.*?</think>", "", annotated, flags=re.DOTALL).strip()
+        if len(annotated) < len(text) * 0.5 or len(annotated) > len(text) * 2.0:
+            print(f"Expressive sanity fail: {len(text)} -> {len(annotated)}")
+            return text
+        print(f"Expressive: {len(text)} -> {len(annotated)} chars")
+        return annotated
+    except Exception as e:
+        print(f"Expressive error: {e}")
+        return text
+
+
 # Create router with aliasing support
 base_router = APIRouter()
 router = add_route_aliases(base_router)
@@ -793,16 +842,21 @@ async def generate_speech_sse(
 )
 async def text_to_speech(request: TTSRequest):
     """Generate speech from text using Chatterbox TTS with voice selection support"""
-    
+
+    # Cortex: Expressive preprocessing — localhost LLM inserts paralinguistic tags
+    tts_input = request.input
+    if getattr(request, "expressive", False):
+        tts_input = await annotate_expressive(request.input)
+
     # Resolve voice name to file path and language
     voice_sample_path, language_id = resolve_voice_path_and_language(request.voice)
-    
+
     # Check if SSE streaming is requested
     if request.stream_format == "sse":
         # Return SSE streaming response
         return StreamingResponse(
             generate_speech_sse(
-                text=request.input,
+                text=tts_input,
                 voice_sample_path=voice_sample_path,
                 language_id=language_id,
                 exaggeration=request.exaggeration,
@@ -822,7 +876,7 @@ async def text_to_speech(request: TTSRequest):
     else:
         # Standard audio generation
         buffer = await generate_speech_internal(
-            text=request.input,
+            text=tts_input,
             voice_sample_path=voice_sample_path,
             language_id=language_id,
             exaggeration=request.exaggeration,
@@ -1024,14 +1078,19 @@ async def text_to_speech_with_upload(
 )
 async def stream_text_to_speech(request: TTSRequest):
     """Stream speech generation from text using Chatterbox TTS with voice selection support"""
-    
+
+    # Cortex: Expressive preprocessing — localhost LLM inserts paralinguistic tags
+    tts_input = request.input
+    if getattr(request, "expressive", False):
+        tts_input = await annotate_expressive(request.input)
+
     # Resolve voice name to file path and language
     voice_sample_path, language_id = resolve_voice_path_and_language(request.voice)
-    
+
     # Create streaming response
     return StreamingResponse(
         generate_speech_streaming(
-            text=request.input,
+            text=tts_input,
             voice_sample_path=voice_sample_path,
             language_id=language_id,
             exaggeration=request.exaggeration,

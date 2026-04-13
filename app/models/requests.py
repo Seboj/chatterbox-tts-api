@@ -15,6 +15,9 @@ class TTSRequest(BaseModel):
     speed: Optional[float] = Field(1.0, description="Speed of speech (ignored)")
     stream_format: Optional[str] = Field("audio", description="Streaming format: 'audio' for raw audio stream, 'sse' for Server-Side Events")
     
+    # Expressive mode — LLM inserts paralinguistic tags before rendering
+    expressive: Optional[bool] = Field(False, description="LLM preprocesses text to insert [laugh], [sigh], [chuckle] etc. for lifelike speech")
+
     # Custom TTS parameters
     exaggeration: Optional[float] = Field(None, description="Emotion intensity", ge=0.25, le=2.0)
     cfg_weight: Optional[float] = Field(None, description="Pace control", ge=0.0, le=1.0)
