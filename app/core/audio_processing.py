@@ -388,7 +388,7 @@ def estimate_concatenation_time(num_files: int, total_duration_seconds: float) -
     # Additional overhead for format conversion, normalization, etc.
     processing_overhead = 5
 
-    return max(10, int(base_time + io_overhead + processing_overhead))    return max(10, int(base_time + io_overhead + processing_overhead))
+    return max(10, int(base_time + io_overhead + processing_overhead))
 
 # --- Cortex Patch #3: WAV time-stretch (2026-04-26) ---
 # Implements playback-speed control that the upstream model layer
