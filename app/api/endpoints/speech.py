@@ -883,7 +883,12 @@ async def text_to_speech(request: TTSRequest):
             cfg_weight=request.cfg_weight,
             temperature=request.temperature
         )
-        
+
+        # Cortex Patch #3 (2026-04-26): apply speed via librosa time-stretch.
+        if getattr(request, 'speed', None) and request.speed != 1.0:
+            from app.core.audio_processing import time_stretch_wav_buffer
+            buffer = time_stretch_wav_buffer(buffer, request.speed)
+
         # Create response
         response = StreamingResponse(
             io.BytesIO(buffer.getvalue()),
@@ -909,7 +914,7 @@ async def text_to_speech_with_upload(
     input: str = Form(..., description="The text to generate audio for", min_length=1, max_length=3000),
     voice: Optional[str] = Form("alloy", description="Voice name from library or OpenAI voice name (defaults to configured sample)"),
     response_format: Optional[str] = Form("wav", description="Audio format (always returns WAV)"),
-    speed: Optional[float] = Form(1.0, description="Speed of speech (ignored)"),
+    speed: Optional[float] = Form(1.0, description="Speed of speech (multiplier 0.5-2.0; honored on /audio/speech and /audio/speech/upload; no-op on streaming endpoints)"),
     stream_format: Optional[str] = Form("audio", description="Streaming format: 'audio' for raw audio stream, 'sse' for Server-Side Events"),
     exaggeration: Optional[float] = Form(None, description="Emotion intensity (0.25-2.0)", ge=0.25, le=2.0),
     cfg_weight: Optional[float] = Form(None, description="Pace control (0.0-1.0)", ge=0.0, le=1.0),
@@ -1044,7 +1049,12 @@ async def text_to_speech_with_upload(
                 cfg_weight=cfg_weight,
                 temperature=temperature
             )
-            
+
+            # Cortex Patch #3 (2026-04-26): apply speed via librosa time-stretch.
+            if speed and speed != 1.0:
+                from app.core.audio_processing import time_stretch_wav_buffer
+                buffer = time_stretch_wav_buffer(buffer, speed)
+
             # Create response
             response = StreamingResponse(
                 io.BytesIO(buffer.getvalue()),
@@ -1125,7 +1135,7 @@ async def stream_text_to_speech_with_upload(
     input: str = Form(..., description="The text to generate audio for", min_length=1, max_length=3000),
     voice: Optional[str] = Form("alloy", description="Voice name from library or OpenAI voice name (defaults to configured sample)"),
     response_format: Optional[str] = Form("wav", description="Audio format (always returns WAV)"),
-    speed: Optional[float] = Form(1.0, description="Speed of speech (ignored)"),
+    speed: Optional[float] = Form(1.0, description="Speed of speech (multiplier 0.5-2.0; honored on /audio/speech and /audio/speech/upload; no-op on streaming endpoints)"),
     exaggeration: Optional[float] = Form(None, description="Emotion intensity (0.25-2.0)", ge=0.25, le=2.0),
     cfg_weight: Optional[float] = Form(None, description="Pace control (0.0-1.0)", ge=0.0, le=1.0),
     temperature: Optional[float] = Form(None, description="Sampling temperature (0.05-5.0)", ge=0.05, le=5.0),

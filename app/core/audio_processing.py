@@ -388,4 +388,60 @@ def estimate_concatenation_time(num_files: int, total_duration_seconds: float) -
     # Additional overhead for format conversion, normalization, etc.
     processing_overhead = 5
 
-    return max(10, int(base_time + io_overhead + processing_overhead))
+    return max(10, int(base_time + io_overhead + processing_overhead))    return max(10, int(base_time + io_overhead + processing_overhead))
+
+# --- Cortex Patch #3: WAV time-stretch (2026-04-26) ---
+# Implements playback-speed control that the upstream model layer
+# (s3gen.py:289) deliberately disabled. Phase-vocoder via librosa keeps
+# pitch constant — voice sounds 0.5x-2x as fast without chipmunk effect.
+# Wired into the non-streaming /audio/speech and upload endpoints.
+# Streaming endpoints intentionally NOT wired — phase vocoder needs a
+# complete utterance to avoid phase discontinuities at chunk boundaries;
+# see Howler clan-comm 2026-04-26 for the streaming-speed design notes.
+
+import io as _stretch_io
+import wave as _stretch_wave
+import numpy as _stretch_np
+
+
+def time_stretch_wav_buffer(buffer, speed: float):
+    """Time-stretch a WAV in an io.BytesIO. Returns a new BytesIO.
+
+    speed > 1.0 => faster (shorter audio); < 1.0 => slower. Clamped to
+    [0.5, 2.0]. Pitch preserved (phase vocoder via librosa).
+    """
+    if speed is None or speed == 1.0:
+        return buffer
+    speed = max(0.5, min(2.0, float(speed)))
+
+    import librosa  # already in venv
+
+    buffer.seek(0)
+    with _stretch_wave.open(buffer, 'rb') as wav_in:
+        n_channels = wav_in.getnchannels()
+        sample_width = wav_in.getsampwidth()
+        sample_rate = wav_in.getframerate()
+        n_frames = wav_in.getnframes()
+        raw = wav_in.readframes(n_frames)
+
+    if sample_width != 2:
+        # Only int16 PCM is supported here. Pass through untouched if not.
+        buffer.seek(0)
+        return buffer
+
+    pcm_i16 = _stretch_np.frombuffer(raw, dtype=_stretch_np.int16)
+    if n_channels > 1:
+        pcm_i16 = pcm_i16.reshape(-1, n_channels).mean(axis=1).astype(_stretch_np.int16)
+
+    pcm_f32 = pcm_i16.astype(_stretch_np.float32) / 32768.0
+    stretched = librosa.effects.time_stretch(pcm_f32, rate=speed)
+    out_i16 = _stretch_np.clip(stretched * 32768.0, -32768, 32767).astype(_stretch_np.int16)
+
+    out = _stretch_io.BytesIO()
+    with _stretch_wave.open(out, 'wb') as wav_out:
+        wav_out.setnchannels(1)
+        wav_out.setsampwidth(2)
+        wav_out.setframerate(sample_rate)
+        wav_out.writeframes(out_i16.tobytes())
+    out.seek(0)
+    return out
