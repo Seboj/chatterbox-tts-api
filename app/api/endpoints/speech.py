@@ -44,6 +44,10 @@ EXPRESSIVE_SYSTEM_PROMPT = (
 
 async def annotate_expressive(text: str) -> str:
     """Call localhost LLM to insert paralinguistic tags. Falls back to original text."""
+    # Defensive: local imports so this function works even if module globals
+    # are somehow corrupted (origin of "name 're' is not defined" bug filed by Howler 2026-04-26).
+    import re
+    import traceback
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=3.0)) as client:
             resp = await client.post(
@@ -69,8 +73,8 @@ async def annotate_expressive(text: str) -> str:
             return text
         print(f"Expressive: {len(text)} -> {len(annotated)} chars")
         return annotated
-    except Exception as e:
-        print(f"Expressive error: {e}")
+    except Exception:
+        print(f"Expressive error:\n{traceback.format_exc()}")
         return text
 
 
